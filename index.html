@@ -3,17 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fake Clock + Lap</title>
+<title>Fake Clock + Lap (analog & picker)</title>
 <style>
   :root { --fg:#fff; --bg:#111; --panel:#1a1a1a; --border:#333; }
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);
     font-family:-apple-system,system-ui,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
   .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;gap:14px;padding:16px}
+  /* 時刻表示 */
   #clock{font-weight:800;line-height:1;text-align:center;font-variant-numeric:tabular-nums;
     font-size:16vw;margin-top:8px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-  input.num{width:5.5ch;text-align:center;font-size:17px;padding:8px 10px;border-radius:8px;
-    border:1px solid var(--border);background:#222;color:var(--fg);appearance:textfield}
+  @media (orientation:landscape){ #clock{font-size:12vh} }
+  /* アナログ */
+  .analog-wrap{display:flex;justify-content:center}
+  #analog{width:min(70vw,380px);height:min(70vw,380px);background:#000;border-radius:50%;border:1px solid var(--border)}
+  /* ピッカー */
+  .picker{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  select.p{font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);
+    background:#222;color:var(--fg)}
+  /* ラップボタン（大） */
+  .lapRow{display:flex;justify-content:center;width:100%}
+  #btnLap{font-size:18px;font-weight:700;padding:14px 18px;border-radius:14px;border:1px solid var(--border);
+    background:#2a2a2a;color:var(--fg);cursor:pointer;touch-action:manipulation;width:min(900px,94vw)}
+  /* その他の操作 */
+  .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   button{font-size:16px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);
     background:#222;color:var(--fg);cursor:pointer;touch-action:manipulation}
   .status{opacity:.85;font-size:14px;text-align:center}
@@ -24,20 +36,35 @@
     font-variant-numeric:tabular-nums}
   th{position:sticky;top:0;background:#181818}
   .ghost{display:none}
-  @media (orientation:landscape){ #clock{font-size:12vh} }
 </style>
 </head>
 <body>
 <div class="wrap">
+
+  <!-- デジタル -->
   <div id="clock">--:--:--</div>
 
-  <div class="row">
-    <input id="hh" class="num" type="number" min="0" max="23" value="19" aria-label="時">
-    <input id="mm" class="num" type="number" min="0" max="59" value="55" aria-label="分">
-    <input id="ss" class="num" type="number" min="0" max="59" value="0"  aria-label="秒">
+  <!-- ラップ（大ボタン） -->
+  <div class="lapRow">
+    <button id="btnLap" onclick="doLap()" disabled>Lap</button>
+  </div>
+
+  <!-- アナログ -->
+  <div class="analog-wrap">
+    <canvas id="analog" width="380" height="380" aria-label="アナログ時計"></canvas>
+  </div>
+
+  <!-- ピッカー（選択式） -->
+  <div class="picker">
+    <label>時 <select id="hh" class="p" aria-label="時"></select></label>
+    <label>分 <select id="mm" class="p" aria-label="分"></select></label>
+    <label>秒 <select id="ss" class="p" aria-label="秒"></select></label>
+  </div>
+
+  <!-- その他の操作 -->
+  <div class="controls">
     <button onclick="startClock()">Set & Start</button>
     <button id="btnFreeze" onclick="toggleFreeze()">Freeze</button>
-    <button id="btnLap" onclick="doLap()" disabled>Lap</button>
     <button id="btnReset" onclick="doReset()" disabled>Reset</button>
     <button id="btnCopy" onclick="copyLaps()" disabled>Copy</button>
     <button id="btnDownload" onclick="downloadCSV()" disabled>DL CSV</button>
@@ -52,7 +79,6 @@
     </table>
   </div>
 
-  <!-- 手動コピー用（最終フォールバック） -->
   <textarea id="fallbackText" class="ghost" rows="6" cols="60" readonly></textarea>
 </div>
 
@@ -68,7 +94,7 @@
     return (h?pad(h)+":":"")+(h?pad(m):m)+":"+pad(sec)+"."+ms3;
   }
   function setStatus(t){ document.getElementById("status").textContent=t; }
-  function draw(){ document.getElementById("clock").textContent=current?fmtClock(current):"--:--:--"; }
+  function drawDigital(){ document.getElementById("clock").textContent=current?fmtClock(current):"--:--:--"; }
   function setButtons(){
     document.getElementById("btnLap").disabled=!running;
     document.getElementById("btnReset").disabled=!startFake;
@@ -76,8 +102,80 @@
     document.getElementById("btnCopy").disabled=!has;
     document.getElementById("btnDownload").disabled=!has;
   }
-  function tick(){ if(running && current){ current = new Date(current.getTime()+1000); draw(); } }
+  function tick(){
+    if(running && current){
+      current = new Date(current.getTime()+1000);
+      drawDigital();
+      drawAnalog();
+    }
+  }
   function loop(){ if(timer) clearInterval(timer); timer = setInterval(tick, 1000); }
+
+  // ---- アナログ描画 ----
+  function drawAnalog(){
+    var c = document.getElementById('analog'); if(!c || !current) return;
+    var ctx = c.getContext('2d');
+    var W = c.width, H = c.height, r = Math.min(W,H)/2 - 8;
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.translate(W/2, H/2);
+
+    // 盤
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle="#000"; ctx.fill(); ctx.strokeStyle="#444"; ctx.lineWidth=2; ctx.stroke();
+
+    // 目盛り
+    for(var i=0;i<60;i++){
+      var ang = Math.PI*2 * (i/60);
+      var len = (i%5===0)? 14 : 7;
+      ctx.beginPath();
+      ctx.rotate(Math.PI*2/60);
+      ctx.moveTo(0, -r);
+      ctx.lineTo(0, -r+len);
+      ctx.strokeStyle = "#666";
+      ctx.lineWidth = (i%5===0)? 3 : 1;
+      ctx.stroke();
+    }
+    ctx.setTransform(1,0,0,1,W/2,H/2);
+
+    // 針
+    var h = current.getHours()%12;
+    var m = current.getMinutes();
+    var s = current.getSeconds();
+
+    var angH = (Math.PI*2)*((h + m/60 + s/3600)/12) - Math.PI/2;
+    var angM = (Math.PI*2)*((m + s/60)/60) - Math.PI/2;
+    var angS = (Math.PI*2)*(s/60) - Math.PI/2;
+
+    function hand(angle, len, width, color){
+      ctx.beginPath();
+      ctx.lineCap="round";
+      ctx.moveTo(0,0);
+      ctx.rotate(angle);
+      ctx.lineTo(len,0);
+      ctx.setTransform(1,0,0,1,W/2,H/2); // reset translate, keep center
+      ctx.strokeStyle=color; ctx.lineWidth=width; ctx.stroke();
+    }
+    // 時・分・秒（長さは右方向描画なので角度補正済み）
+    ctx.translate(W/2,H/2);
+    ctx.rotate(angH); ctx.beginPath(); ctx.lineCap="round"; ctx.moveTo(-10,0); ctx.lineTo(r*0.5,0); ctx.lineWidth=6; ctx.strokeStyle="#fff"; ctx.stroke();
+    ctx.setTransform(1,0,0,1,W/2,H/2);
+    ctx.rotate(angM); ctx.beginPath(); ctx.lineCap="round"; ctx.moveTo(-14,0); ctx.lineTo(r*0.72,0); ctx.lineWidth=4; ctx.strokeStyle="#ddd"; ctx.stroke();
+    ctx.setTransform(1,0,0,1,W/2,H/2);
+    ctx.rotate(angS); ctx.beginPath(); ctx.lineCap="round"; ctx.moveTo(-18,0); ctx.lineTo(r*0.82,0); ctx.lineWidth=2; ctx.strokeStyle="#ff5252"; ctx.stroke();
+
+    // 中心点
+    ctx.setTransform(1,0,0,1,W/2,H/2);
+    ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fillStyle="#888"; ctx.fill();
+
+    ctx.restore();
+  }
+
+  // ---- ピッカー生成 ----
+  function fillSelect(el, max, def){
+    var html='', i=0;
+    for(i=0;i<=max;i++){ var v=pad(i); html += '<option value="'+i+'"'+(i===def?' selected':'')+'>'+v+'</option>'; }
+    el.innerHTML = html;
+  }
 
   // ---- メイン操作 ----
   function startClock(){
@@ -89,7 +187,7 @@
     startFake = new Date(current.getTime());
     lastLapFake = new Date(current.getTime());
     laps = []; document.getElementById("tbody").innerHTML = "";
-    running = true; draw(); loop();
+    running = true; drawDigital(); drawAnalog(); loop();
     setStatus("開始: "+pad(H)+":"+pad(M)+":"+pad(S)+" から進行中");
     document.getElementById("btnFreeze").textContent = "Freeze";
     setButtons();
@@ -116,7 +214,6 @@
     tr.innerHTML = "<td>"+row.n+"</td><td>"+row.clock+"</td><td>"+fmtDur(row.seg)+"</td><td>"+fmtDur(row.tot)+"</td>";
     document.getElementById("tbody").appendChild(tr);
 
-    // スクロールを末尾へ
     var box = document.querySelector(".tableWrap");
     box.scrollTop = box.scrollHeight;
 
@@ -126,7 +223,8 @@
   function doReset(){
     running=false; current=null; startFake=null; lastLapFake=null; laps=[];
     if(timer) clearInterval(timer);
-    draw(); setStatus("リセットしました");
+    drawDigital(); drawAnalog();
+    setStatus("リセットしました");
     document.getElementById("tbody").innerHTML="";
     document.getElementById("btnFreeze").textContent="Freeze";
     setButtons();
@@ -142,7 +240,6 @@
     return lines.join("\n");
   }
   function lapsAsCSV(){
-    // CSVはカンマ区切り＋引用符
     var esc = function(s){ return '"'+String(s).replace(/"/g,'""')+'"'; };
     var lines = [["#", "表示時刻", "区間(ms)", "区間(表示)", "累計(ms)", "累計(表示)"]];
     for(var i=0;i<laps.length;i++){
@@ -154,15 +251,13 @@
 
   async function copyLaps(){
     var tsv = lapsAsTSV();
-    // 1) Clipboard API
     try{
       if(navigator.clipboard && navigator.clipboard.writeText){
         await navigator.clipboard.writeText(tsv);
         setStatus("TSVをクリップボードへコピーしました");
         return;
       }
-    }catch(e){/* fallthrough */}
-    // 2) execCommand
+    }catch(e){}
     try{
       var ta = document.createElement("textarea");
       ta.value = tsv;
@@ -172,8 +267,7 @@
       document.body.removeChild(ta);
       setStatus(ok ? "TSVをクリップボードへコピーしました" : "コピー失敗");
       if(ok) return;
-    }catch(e){/* fallthrough */}
-    // 3) 手動コピー
+    }catch(e){}
     var fb = document.getElementById("fallbackText");
     fb.classList.remove("ghost");
     fb.value = tsv;
@@ -192,7 +286,6 @@
       setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
       setStatus("CSVをダウンロードしました");
     }catch(e){
-      // data:URL フォールバック
       var data = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
       location.href = data;
     }
@@ -200,18 +293,22 @@
 
   // ---- 初期化（?time=HH:MM[:SS] もサポート）----
   (function init(){
+    // ピッカーを生成
+    var now = new Date();
+    var defH = 19, defM = 55, defS = 0;
     var params = new URLSearchParams(location.search);
     var q = params.get("time");
-    var now = new Date();
     if(q){
       var p = q.split(":");
-      var H = clamp(p[0],0,23), M = clamp(p[1],0,59), S = clamp(p[2]||0,0,59);
-      current = new Date(now.getFullYear(), now.getMonth(), now.getDate(), H, M, S);
-      document.getElementById("hh").value=H; document.getElementById("mm").value=M; document.getElementById("ss").value=S;
-    }else{
-      current = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 55, 0);
+      defH = clamp(p[0],0,23); defM = clamp(p[1],0,59); defS = clamp(p[2]||0,0,59);
     }
-    draw(); setButtons();
+    fillSelect(document.getElementById("hh"), 23, defH);
+    fillSelect(document.getElementById("mm"), 59, defM);
+    fillSelect(document.getElementById("ss"), 59, defS);
+
+    current = new Date(now.getFullYear(), now.getMonth(), now.getDate(), defH, defM, defS);
+    drawDigital(); drawAnalog();
+    setButtons();
   })();
 </script>
 </body>
