@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fake Clock + Lap (mini)</title>
+<style>
+ body{margin:0;background:#111;color:#fff;font-family:-apple-system,system-ui}
+ #clk{font:700 16vw/1 -apple-system,system-ui;text-align:center;margin:16px 0}
+ .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:8px}
+ .row input,.row button{font-size:17px;padding:6px 10px;border-radius:8px;border:1px solid #333;background:#222;color:#fff}
+ .row input{width:5.5ch;text-align:center;appearance:textfield}
+ #st{opacity:.85;font-size:14px;text-align:center;margin:6px}
+ table{width:min(820px,94vw);margin:8px auto;border-collapse:collapse;border:1px solid #333;border-radius:8px;overflow:hidden}
+ th,td{padding:6px 8px;border-bottom:1px solid #333;text-align:left;font-variant-numeric:tabular-nums}
+ th{background:#1a1a1a}
+</style>
+</head><body>
+<div id="clk">--:--:--</div>
+<div class="row">
+  <input id="H" type="number" min="0" max="23" value="19">
+  <input id="M" type="number" min="0" max="59" value="55">
+  <input id="S" type="number" min="0" max="59" value="0">
+  <button onclick="startClock()">Set & Start</button>
+  <button id="bz" onclick="toggleFreeze()">Freeze</button>
+  <button id="bl" onclick="doLap()" disabled>Lap</button>
+  <button id="br" onclick="doReset()" disabled>Reset</button>
+  <button id="bc" onclick="doCopy()" disabled>Copy</button>
+</div>
+<div id="st">待機中（Set & Startで開始）</div>
+<table><thead><tr><th>#</th><th>表示時刻</th><th>区間</th><th>累計</th></tr></thead><tbody id="tb"></tbody></table>
+
+<script>
+var run=false,c=null,t=null,st=null,ll=null,ls=[];
+function p(n){n=parseInt(n,10)||0;return("0"+n).slice(-2)}
+function fC(d){return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())}
+function fD(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),s2=s%60,ms3=("00"+(ms%1000)).slice(-3);return (h?p(h)+":":"")+(h?p(m):m)+":"+p(s2)+"."+ms3}
+function draw(){document.getElementById("clk").textContent=c?fC(c):"--:--:--"}
+function msg(x){document.getElementById("st").textContent=x}
+function tick(){if(run&&c){c=new Date(c.getTime()+1000);draw()}}
+function loop(){if(t)clearInterval(t);t=setInterval(tick,1000)}
+function setBtns(){document.getElementById("bl").disabled=!run;document.getElementById("br").disabled=!st;document.getElementById("bc").disabled=(ls.length===0)}
+function clamp(v,min,max){v=parseInt(v,10)||0;if(v<min)v=min;if(v>max)v=max;return v}
+function startClock(){
+  var H=clamp(document.getElementById("H").value,0,23),
+      M=clamp(document.getElementById("M").value,0,59),
+      S=clamp(document.getElementById("S").value,0,59),
+      now=new Date();
+  c=new Date(now.getFullYear(),now.getMonth(),now.getDate(),H,M,S);
+  st=new Date(c.getTime()); ll=new Date(c.getTime()); ls=[];
+  document.getElementById("tb").innerHTML="";
+  run=true; draw(); loop(); msg("開始: "+p(H)+":"+p(M)+":"+p(S)+" から進行中");
+  document.getElementById("bz").textContent="Freeze"; setBtns();
+}
+function toggleFreeze(){if(!st)return; run=!run; document.getElementById("bz").textContent=run?"Freeze":"Resume"; msg(run?"再開":"停止中（Freeze）"); setBtns()}
+function doLap(){
+  if(!c)return; var now=new Date(c.getTime()), seg=now-ll, tot=now-st; ll=new Date(now.getTime());
+  var i=ls.length+1, tr=document.createElement("tr"); ls.push({i:i,now:now,seg:seg,tot:tot});
+  tr.innerHTML="<td>"+i+"</td><td>"+fC(now)+"</td><td>"+fD(seg)+"</td><td>"+fD(tot)+"</td>";
+  document.getElementById("tb").appendChild(tr); setBtns(); var box=document.querySelector("tbody").parentElement; box.scrollTop=box.scrollHeight;
+}
+function doReset(){run=false; c=null; st=null; ll=null; ls=[]; if(t)clearInterval(t); draw(); msg("リセットしました"); document.getElementById("tb").innerHTML=""; document.getElementById("bz").textContent="Freeze"; setBtns()}
+function doCopy(){
+  if(!ls.length)return; var a=["#\t表示時刻\t区間(ms)\t区間(表示)\t累計(ms)\t累計(表示)"];
+  for(var i=0;i<ls.length;i++){var r=ls[i]; a.push([r.i,fC(r.now),r.seg,fD(r.seg),r.tot,fD(r.tot)].join("\t"))}
+  var txt=a.join("\n"); var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select();
+  try{document.execCommand("copy"); msg("クリップボードへコピーしました")}catch(e){msg("コピー失敗")}
+  document.body.removeChild(ta);
+}
+(function init(){ var now=new Date(); c=new Date(now.getFullYear(),now.getMonth(),now.getDate(),19,55,0); draw(); setBtns(); })();
+</script>
+</body></html>
