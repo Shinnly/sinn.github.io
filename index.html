@@ -3,32 +3,47 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fake Clock + Lap (analog & picker)</title>
+<title>Fake Clock + Lap (picker / analog numerals)</title>
 <style>
   :root { --fg:#fff; --bg:#111; --panel:#1a1a1a; --border:#333; }
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);
     font-family:-apple-system,system-ui,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
   .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;gap:14px;padding:16px}
-  /* 時刻表示 */
+
+  /* ==== 時計ブロック（上段） ==== */
+  .clocks{display:flex;flex-direction:column;gap:14px;align-items:center;width:100%}
+
+  /* デジタル */
   #clock{font-weight:800;line-height:1;text-align:center;font-variant-numeric:tabular-nums;
     font-size:16vw;margin-top:8px}
   @media (orientation:landscape){ #clock{font-size:12vh} }
+
   /* アナログ */
   .analog-wrap{display:flex;justify-content:center}
-  #analog{width:min(70vw,380px);height:min(70vw,380px);background:#000;border-radius:50%;border:1px solid var(--border)}
-  /* ピッカー */
-  .picker{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-  select.p{font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);
-    background:#222;color:var(--fg)}
-  /* ラップボタン（大） */
+  #analog{width:min(72vw,420px);height:min(72vw,420px);background:#000;border-radius:50%;
+    border:1px solid var(--border)}
+
+  /* ==== Lap（大ボタン：時計直下） ==== */
   .lapRow{display:flex;justify-content:center;width:100%}
-  #btnLap{font-size:18px;font-weight:700;padding:14px 18px;border-radius:14px;border:1px solid var(--border);
-    background:#2a2a2a;color:var(--fg);cursor:pointer;touch-action:manipulation;width:min(900px,94vw)}
-  /* その他の操作 */
+  #btnLap{
+    font-size:18px;font-weight:800;
+    padding:28px 18px;           /* ← 以前の約2倍の縦幅 */
+    border-radius:16px;border:1px solid var(--border);
+    background:#2a2a2a;color:var(--fg);cursor:pointer;touch-action:manipulation;
+    width:min(900px,94vw)
+  }
+
+  /* ==== その他の設定（時計のさらに下） ==== */
   .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   button{font-size:16px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);
     background:#222;color:var(--fg);cursor:pointer;touch-action:manipulation}
+  .picker{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  select.p{font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);
+    background:#222;color:var(--fg)}
+  .toggles{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
+
   .status{opacity:.85;font-size:14px;text-align:center}
+
   .tableWrap{width:min(900px,94vw);max-height:50vh;overflow:auto;border:1px solid var(--border);
     border-radius:10px;background:var(--panel)}
   table{width:100%;border-collapse:collapse}
@@ -36,38 +51,42 @@
     font-variant-numeric:tabular-nums}
   th{position:sticky;top:0;background:#181818}
   .ghost{display:none}
+  label.inline{display:inline-flex;gap:6px;align-items:center;font-size:14px;opacity:.9}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <!-- デジタル -->
-  <div id="clock">--:--:--</div>
+  <!-- ===== 時計（上段：デジタル／アナログ） ===== -->
+  <div class="clocks">
+    <div id="clock">--:--:--</div>
+    <div class="analog-wrap">
+      <canvas id="analog" width="420" height="420" aria-label="アナログ時計"></canvas>
+    </div>
+  </div>
 
-  <!-- ラップ（大ボタン） -->
+  <!-- ===== Lap（時計直下・大ボタン） ===== -->
   <div class="lapRow">
     <button id="btnLap" onclick="doLap()" disabled>Lap</button>
   </div>
 
-  <!-- アナログ -->
-  <div class="analog-wrap">
-    <canvas id="analog" width="380" height="380" aria-label="アナログ時計"></canvas>
-  </div>
-
-  <!-- ピッカー（選択式） -->
+  <!-- ===== その他の設定（さらに下段） ===== -->
   <div class="picker">
     <label>時 <select id="hh" class="p" aria-label="時"></select></label>
     <label>分 <select id="mm" class="p" aria-label="分"></select></label>
     <label>秒 <select id="ss" class="p" aria-label="秒"></select></label>
   </div>
 
-  <!-- その他の操作 -->
   <div class="controls">
     <button onclick="startClock()">Set & Start</button>
     <button id="btnFreeze" onclick="toggleFreeze()">Freeze</button>
     <button id="btnReset" onclick="doReset()" disabled>Reset</button>
-    <button id="btnCopy" onclick="copyLaps()" disabled>Copy</button>
-    <button id="btnDownload" onclick="downloadCSV()" disabled>DL CSV</button>
+    <button id="btnCopy" onclick="copyLaps()" disabled>Copy (TSV)</button>
+  </div>
+
+  <div class="toggles">
+    <label class="inline"><input type="checkbox" id="showDigital" checked onchange="applyVisibility()"> デジタル表示</label>
+    <label class="inline"><input type="checkbox" id="showAnalog"  checked onchange="applyVisibility()"> アナログ表示</label>
   </div>
 
   <div id="status" class="status">待機中（Set & Start で開始）</div>
@@ -85,6 +104,7 @@
 <script>
   // ---- 状態 ----
   var running=false, current=null, timer=null, startFake=null, lastLapFake=null, laps=[];
+
   // ---- Util ----
   function pad(n){ n=parseInt(n,10)||0; return ("0"+n).slice(-2); }
   function clamp(v,min,max){ v=parseInt(v,10)||0; if(v<min)v=min; if(v>max)v=max; return v; }
@@ -100,7 +120,6 @@
     document.getElementById("btnReset").disabled=!startFake;
     var has = laps.length>0;
     document.getElementById("btnCopy").disabled=!has;
-    document.getElementById("btnDownload").disabled=!has;
   }
   function tick(){
     if(running && current){
@@ -111,61 +130,74 @@
   }
   function loop(){ if(timer) clearInterval(timer); timer = setInterval(tick, 1000); }
 
-  // ---- アナログ描画 ----
+  // ---- 表示切替 ----
+  function applyVisibility(){
+    var showD = document.getElementById("showDigital").checked;
+    var showA = document.getElementById("showAnalog").checked;
+    document.getElementById("clock").style.display  = showD ? "" : "none";
+    document.querySelector(".analog-wrap").style.display = showA ? "" : "none";
+  }
+
+  // ---- アナログ描画（数字＆目盛） ----
   function drawAnalog(){
-    var c = document.getElementById('analog'); if(!c || !current) return;
+    var c = document.getElementById('analog'); if(!c) return;
     var ctx = c.getContext('2d');
-    var W = c.width, H = c.height, r = Math.min(W,H)/2 - 8;
+    var W = c.width, H = c.height, r = Math.min(W,H)/2 - 12;
     ctx.clearRect(0,0,W,H);
     ctx.save();
     ctx.translate(W/2, H/2);
 
     // 盤
-    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle="#000"; ctx.fill(); ctx.strokeStyle="#444"; ctx.lineWidth=2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fillStyle="#000"; ctx.fill();
+    ctx.strokeStyle="#444"; ctx.lineWidth=2; ctx.stroke();
 
-    // 目盛り
+    // 分目盛(60) + 時目盛(12)
     for(var i=0;i<60;i++){
-      var ang = Math.PI*2 * (i/60);
-      var len = (i%5===0)? 14 : 7;
+      var angle = Math.PI*2 * (i/60) - Math.PI/2;
+      var inner = r - ((i%5===0)? 16 : 8);
       ctx.beginPath();
-      ctx.rotate(Math.PI*2/60);
-      ctx.moveTo(0, -r);
-      ctx.lineTo(0, -r+len);
-      ctx.strokeStyle = "#666";
-      ctx.lineWidth = (i%5===0)? 3 : 1;
+      ctx.moveTo(Math.cos(angle)*r, Math.sin(angle)*r);
+      ctx.lineTo(Math.cos(angle)*inner, Math.sin(angle)*inner);
+      ctx.strokeStyle = i%5===0 ? "#777" : "#555";
+      ctx.lineWidth   = i%5===0 ? 3 : 1;
       ctx.stroke();
     }
-    ctx.setTransform(1,0,0,1,W/2,H/2);
 
-    // 針
-    var h = current.getHours()%12;
-    var m = current.getMinutes();
-    var s = current.getSeconds();
-
-    var angH = (Math.PI*2)*((h + m/60 + s/3600)/12) - Math.PI/2;
-    var angM = (Math.PI*2)*((m + s/60)/60) - Math.PI/2;
-    var angS = (Math.PI*2)*(s/60) - Math.PI/2;
-
-    function hand(angle, len, width, color){
-      ctx.beginPath();
-      ctx.lineCap="round";
-      ctx.moveTo(0,0);
-      ctx.rotate(angle);
-      ctx.lineTo(len,0);
-      ctx.setTransform(1,0,0,1,W/2,H/2); // reset translate, keep center
-      ctx.strokeStyle=color; ctx.lineWidth=width; ctx.stroke();
+    // 時数字（1〜12）
+    ctx.fillStyle="#ddd";
+    ctx.font = "bold "+Math.round(r*0.14)+"px -apple-system,system-ui,Segoe UI,Roboto";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    for(var h=1; h<=12; h++){
+      var ang = Math.PI*2*(h/12) - Math.PI/2;
+      var rr = r * 0.78; // 数字配置半径
+      var x = Math.cos(ang)*rr, y = Math.sin(ang)*rr;
+      ctx.fillText(String(h), x, y);
     }
-    // 時・分・秒（長さは右方向描画なので角度補正済み）
-    ctx.translate(W/2,H/2);
-    ctx.rotate(angH); ctx.beginPath(); ctx.lineCap="round"; ctx.moveTo(-10,0); ctx.lineTo(r*0.5,0); ctx.lineWidth=6; ctx.strokeStyle="#fff"; ctx.stroke();
-    ctx.setTransform(1,0,0,1,W/2,H/2);
-    ctx.rotate(angM); ctx.beginPath(); ctx.lineCap="round"; ctx.moveTo(-14,0); ctx.lineTo(r*0.72,0); ctx.lineWidth=4; ctx.strokeStyle="#ddd"; ctx.stroke();
-    ctx.setTransform(1,0,0,1,W/2,H/2);
-    ctx.rotate(angS); ctx.beginPath(); ctx.lineCap="round"; ctx.moveTo(-18,0); ctx.lineTo(r*0.82,0); ctx.lineWidth=2; ctx.strokeStyle="#ff5252"; ctx.stroke();
 
-    // 中心点
-    ctx.setTransform(1,0,0,1,W/2,H/2);
-    ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fillStyle="#888"; ctx.fill();
+    if(current){
+      // 針
+      var h = current.getHours()%12;
+      var m = current.getMinutes();
+      var s = current.getSeconds();
+      var angH = (Math.PI*2)*((h + m/60 + s/3600)/12) - Math.PI/2;
+      var angM = (Math.PI*2)*((m + s/60)/60) - Math.PI/2;
+      var angS = (Math.PI*2)*(s/60) - Math.PI/2;
+
+      // 時
+      ctx.strokeStyle="#fff"; ctx.lineWidth=6; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(0,0);
+      ctx.lineTo(Math.cos(angH)*r*0.55, Math.sin(angH)*r*0.55); ctx.stroke();
+      // 分
+      ctx.strokeStyle="#ddd"; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.moveTo(0,0);
+      ctx.lineTo(Math.cos(angM)*r*0.78, Math.sin(angM)*r*0.78); ctx.stroke();
+      // 秒
+      ctx.strokeStyle="#ff5252"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(0,0);
+      ctx.lineTo(Math.cos(angS)*r*0.85, Math.sin(angS)*r*0.85); ctx.stroke();
+      // 中心
+      ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fillStyle="#aaa"; ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -230,7 +262,7 @@
     setButtons();
   }
 
-  // ---- 出力（コピー／DL） ----
+  // ---- 出力（コピーのみ：TSV） ----
   function lapsAsTSV(){
     var lines = ["#\t表示時刻\t区間(ms)\t区間(表示)\t累計(ms)\t累計(表示)"];
     for(var i=0;i<laps.length;i++){
@@ -238,15 +270,6 @@
       lines.push([r.n, r.clock, r.seg, fmtDur(r.seg), r.tot, fmtDur(r.tot)].join("\t"));
     }
     return lines.join("\n");
-  }
-  function lapsAsCSV(){
-    var esc = function(s){ return '"'+String(s).replace(/"/g,'""')+'"'; };
-    var lines = [["#", "表示時刻", "区間(ms)", "区間(表示)", "累計(ms)", "累計(表示)"]];
-    for(var i=0;i<laps.length;i++){
-      var r=laps[i];
-      lines.push([r.n, r.clock, r.seg, fmtDur(r.seg), r.tot, fmtDur(r.tot)]);
-    }
-    return lines.map(function(arr){ return arr.map(esc).join(","); }).join("\n");
   }
 
   async function copyLaps(){
@@ -275,22 +298,6 @@
     setStatus("コピー不可のため下のテキストから手動コピーしてください");
   }
 
-  function downloadCSV(){
-    var csv = lapsAsCSV();
-    try{
-      var blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url; a.download = "laps.csv";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-      setStatus("CSVをダウンロードしました");
-    }catch(e){
-      var data = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
-      location.href = data;
-    }
-  }
-
   // ---- 初期化（?time=HH:MM[:SS] もサポート）----
   (function init(){
     // ピッカーを生成
@@ -309,6 +316,7 @@
     current = new Date(now.getFullYear(), now.getMonth(), now.getDate(), defH, defM, defS);
     drawDigital(); drawAnalog();
     setButtons();
+    applyVisibility(); // 初期の表示反映
   })();
 </script>
 </body>
